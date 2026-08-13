@@ -1,5 +1,3 @@
-import type { Plugin } from "@opencode-ai/plugin"
-
 export type LogLevel = "debug" | "info" | "warn" | "error"
 export type LogFn = (level: LogLevel, message: string) => Promise<unknown>
 
@@ -9,15 +7,17 @@ const WARN_PATTERNS =
   /rate.limit|429|overloaded|503|stale.session|timeout|timed out/i
 
 /**
- * Create a logger bound to the plugin's client.
+ * Create a logger for proxy diagnostics. V2 plugins no longer receive the V1
+ * app logging client.
  */
-export function createLogger(
-  client: Parameters<Plugin>[0]["client"]
-): LogFn {
-  return (level, message) =>
-    client.app.log({
-      body: { service: "opencode-with-claude", level, message },
-    })
+export function createLogger(): LogFn {
+  return async (level, message) => {
+    const output = `[opencode-with-claude] ${message}`
+    if (level === "error") console.error(output)
+    else if (level === "warn") console.warn(output)
+    else if (level === "debug") console.debug(output)
+    else console.info(output)
+  }
 }
 
 /**

@@ -35,7 +35,7 @@ if [[ "${1:-}" == "--clean" ]]; then
 fi
 
 # --- Preflight ---
-command -v opencode &>/dev/null || fail "OpenCode not found. Run: npm install -g opencode-ai"
+command -v opencode2 &>/dev/null || fail "OpenCode V2 not found. Run: npm install -g @opencode-ai/cli@next"
 command -v claude &>/dev/null || fail "Claude CLI not found. Run: npm install -g @anthropic-ai/claude-code"
 
 # --- Check auth ---
@@ -58,7 +58,7 @@ ok "Build complete"
 WORK_DIR=$(mktemp -d)
 info "Test workspace: $WORK_DIR"
 
-# Copy opencode.json (Anthropic provider remains explicitly configured; the plugin only rewrites baseURL)
+# Copy the native V2 provider config; the plugin is loaded by local discovery.
 cp "$SCRIPT_DIR/opencode.json" "$WORK_DIR/opencode.json"
 
 # Set up .opencode/plugins/ with symlink to built plugin
@@ -81,4 +81,4 @@ info "Plugin: $PLUGIN_DIR/dist/index.js -> .opencode/plugins/claude-proxy.js"
 info "The plugin will start its own proxy on an OS-assigned port."
 info ""
 
-(cd "$WORK_DIR" && opencode"$@")
+(cd "$WORK_DIR" && opencode2 "$@")

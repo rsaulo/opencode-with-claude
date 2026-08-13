@@ -11,8 +11,6 @@ import { startProxyServer } from "@rynfar/meridian"
 // calls are filtered from the response stream and never shown in the TUI.
 process.env.MERIDIAN_PASSTHROUGH ??= "true"
 
-const IS_WINDOWS = process.platform === "win32"
-
 // ---------------------------------------------------------------------------
 // Proxy lifecycle
 // ---------------------------------------------------------------------------
@@ -304,26 +302,5 @@ export async function checkProxyHealth(
       err instanceof Error ? err.message : String(err)
     void log?.( "error", `[claude-max] Health check failed: ${msg}`)
     return { ok: false, message: `Health check failed: ${msg}` }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Process cleanup
-// ---------------------------------------------------------------------------
-
-export function registerCleanup(proxy: ProxyHandle): void {
-  let cleaned = false
-
-  const cleanup = () => {
-    if (cleaned) return
-    cleaned = true
-    void proxy.close()
-  }
-
-  process.on("exit", cleanup)
-  process.on("SIGINT", cleanup)
-
-  if (!IS_WINDOWS) {
-    process.on("SIGTERM", cleanup)
   }
 }

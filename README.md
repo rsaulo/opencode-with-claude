@@ -48,10 +48,10 @@ Global (`~/.config/opencode/opencode.json`) or project-level:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-with-claude"],
-  "provider": {
+  "plugins": ["opencode-with-claude"],
+  "providers": {
     "anthropic": {
-      "options": {
+      "settings": {
         "baseURL": "http://127.0.0.1:3456",
         "apiKey": "dummy"
       }
@@ -63,7 +63,7 @@ Global (`~/.config/opencode/opencode.json`) or project-level:
 **3. Run OpenCode**
 
 ```bash
-opencode
+opencode2
 ```
 
 ## Profiles and SDK features
@@ -177,7 +177,7 @@ interface, set `CLAUDE_PROXY_HOST` (or Meridian's `MERIDIAN_HOST` alias) before
 starting OpenCode:
 
 ```bash
-CLAUDE_PROXY_HOST=0.0.0.0 opencode serve --hostname 0.0.0.0 --port 4098
+CLAUDE_PROXY_HOST=0.0.0.0 opencode2 --standalone
 ```
 
 The plugin still uses loopback internally when you bind to wildcard addresses
@@ -225,7 +225,7 @@ npm run build
 
 **Do I need an Anthropic API key?**
 
-No. Claude Max is not authenticated with API keys here. Run `claude login` once; the proxy uses that session (Agent SDK via OAuth). OpenCode still expects an `apiKey` field in the Anthropic provider config, so set a placeholder such as `"dummy"` in `opencode.json` — it is not used for real auth.
+No. Claude Max is not authenticated with API keys here. Run `claude login` once; the proxy uses that session (Agent SDK via OAuth). OpenCode still expects an `apiKey` setting in the Anthropic provider config, so set a placeholder such as `"dummy"` in `opencode.json` — it is not used for real auth.
 
 **What if my Claude Max subscription lapses?**
 
