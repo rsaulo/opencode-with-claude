@@ -11,7 +11,7 @@ An [OpenCode](https://opencode.ai) plugin that runs [Meridian](https://github.co
 **Compared to running the proxy yourself:**
 
 - **One process to think about** — OpenCode owns the proxy lifecycle (start/stop) instead of you juggling two things.
-- **Several OpenCode windows at once** — each instance gets its own proxy on an OS-assigned port, so ports do not collide and you avoid session issues from sharing one proxy across instances.
+- **Several OpenCode windows at once** — one Meridian per OpenCode server process, always the same port (3456 unless something else already owns it). Every window and project talks to that single listener; conversations stay isolated via session headers, not extra proxies.
 - **Explicit session headers** — the plugin adds session tracking on outgoing API calls, so the proxy does not have to infer sessions from fingerprints alone.
 
 ## How It Works
@@ -19,7 +19,7 @@ An [OpenCode](https://opencode.ai) plugin that runs [Meridian](https://github.co
 ```
 ┌─────────────┐              ┌────────────────────┐       ┌─────────────────┐
 │  OpenCode   │─────────────▶│  Claude Max Proxy  │──────▶│    Anthropic    │
-│  (TUI/Web)  │ :3456 / auto │   (local server)   │  SDK  │    Claude Max   │
+│  (TUI/Web)  │ :3456        │   (local server)   │  SDK  │    Claude Max   │
 │             │◀─────────────│                    │◀──────│                 │
 └─────────────┘              └────────────────────┘       └─────────────────┘
 ```

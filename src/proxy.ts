@@ -22,6 +22,11 @@ export interface StartProxyOptions {
   profiles?: ProfileConfig[]
   /** Default profile id when no x-meridian-profile header is sent. */
   defaultProfile?: string
+  /**
+   * When false, EADDRINUSE throws instead of binding a random port.
+   * Default true — used by tests that want an isolated listener.
+   */
+  fallback?: boolean
 }
 
 export interface ProxyHandle {
@@ -104,6 +109,38 @@ export function getProxyBaseURL(
   return `http://${formatHostForUrl(getProxyConnectHost(host))}:${port}`
 }
 
+function parsePort(port: string | number | undefined): number {
+  if (port === undefined || port === "") return DEFAULT_PORT
+  const n = typeof port === "string" ? parseInt(port, 10) : port
+  return Number.isFinite(n) ? n : DEFAULT_PORT
+}
+
+function isAddrInUse(err: unknown): boolean {
+  return err instanceof Error && "code" in err && err.code === "EADDRINUSE"
+}
+
+/**
+ * True when something already answering on `port` looks like Meridian.
+ * Used to adopt a leftover listener after a plugin reload instead of
+ * starting a second server in this process.
+ */
+async function looksLikeMeridian(
+  port: string | number,
+  log: LogFn | undefined,
+): Promise<boolean> {
+  try {
+    const res = await fetch(getProxyBaseURL(port) + "/health", {
+      signal: AbortSignal.timeout(2_000),
+    })
+    const body = (await res.json()) as Record<string, unknown>
+    return typeof body.status === "string"
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    void log?.("debug", `port ${port} is not a Meridian listener: ${msg}`)
+    return false
+  }
+}
+
 export async function startProxy(opts: StartProxyOptions): Promise<ProxyHandle> {
   const { port = DEFAULT_PORT, log, profiles, defaultProfile } = opts
   const host = getProxyHost()
@@ -157,12 +194,7 @@ export async function startProxy(opts: StartProxyOptions): Promise<ProxyHandle> 
     try {
       return await tryStart(p)
     } catch (err) {
-      if (
-        p !== 0 &&
-        err instanceof Error &&
-        "code" in err &&
-        err.code === "EADDRINUSE"
-      ) {
+      if (opts.fallback !== false && p !== 0 && isAddrInUse(err)) {
         void log?.(
           "info",
           `Port ${p} in use, starting on a random port instead...`
@@ -193,6 +225,138 @@ export async function startProxy(opts: StartProxyOptions): Promise<ProxyHandle> 
       await proxy.close()
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Process-wide singleton — one Meridian, one port, every location shares it.
+// Location plugin unload must NOT close this. Isolation is x-opencode-session.
+// ---------------------------------------------------------------------------
+
+type SharedProxy = {
+  handle: ProxyHandle
+  ownedClose?: () => Promise<void>
+  healthChecked: boolean
+}
+
+let shared: SharedProxy | undefined
+let sharedStarting: Promise<ProxyHandle> | undefined
+let sharedRefs = 0
+
+function immortalize(
+  started: ProxyHandle,
+  owned: boolean,
+): ProxyHandle {
+  const handle: ProxyHandle = {
+    port: started.port,
+    close: async () => {
+      // Shared lifetime: a location unloading must not kill Claude for others.
+      // Call releaseSharedProxy() instead — it closes only at refcount 0.
+    },
+  }
+  shared = {
+    handle,
+    ownedClose: owned ? () => started.close() : undefined,
+    healthChecked: false,
+  }
+  return handle
+}
+
+/**
+ * Return the single Meridian listener for this process.
+ *
+ * First caller binds `opts.port` (default 3456). Later callers reuse it.
+ * If that port belongs to another process, one fallback port is started
+ * and then shared — never a second listener.
+ */
+async function startShared(opts: StartProxyOptions): Promise<ProxyHandle> {
+  const preferred = parsePort(opts.port)
+
+  try {
+    const started = await startProxy({ ...opts, port: preferred, fallback: false })
+    return immortalize(started, true)
+  } catch (err) {
+    if (!isAddrInUse(err) || preferred === 0) throw err
+
+    if (await looksLikeMeridian(preferred, opts.log)) {
+      void opts.log?.(
+        "info",
+        `reusing existing Claude Max proxy on port ${preferred}`,
+      )
+      return immortalize({ port: preferred, close: async () => {} }, false)
+    }
+
+    void opts.log?.(
+      "warn",
+      `Port ${preferred} in use by another process; sharing a single fallback port instead...`,
+    )
+    const started = await startProxy({ ...opts, port: 0, fallback: false })
+    return immortalize(started, true)
+  }
+}
+
+export async function acquireSharedProxy(
+  opts: StartProxyOptions,
+): Promise<ProxyHandle> {
+  if (shared) {
+    sharedRefs += 1
+    void opts.log?.(
+      "info",
+      `reusing Claude Max proxy on port ${shared.handle.port}`,
+    )
+    return shared.handle
+  }
+  if (!sharedStarting) sharedStarting = startShared(opts)
+
+  try {
+    const handle = await sharedStarting
+    sharedRefs += 1
+    return handle
+  } finally {
+    if (shared) sharedStarting = undefined
+  }
+}
+
+/**
+ * Drop one location's claim on the shared proxy. The listener closes only
+ * when the last claimant is gone (tests, or the last project leaving).
+ */
+export async function releaseSharedProxy(): Promise<void> {
+  if (sharedRefs <= 0) return
+  sharedRefs -= 1
+  if (sharedRefs > 0) return
+  const close = shared?.ownedClose
+  shared = undefined
+  sharedStarting = undefined
+  await close?.()
+}
+
+/** Run /health once for the shared proxy. Later locations skip it. */
+export function checkSharedProxyHealth(
+  port: string | number,
+  log: LogFn | undefined,
+): void {
+  if (shared?.healthChecked) return
+  if (shared) shared.healthChecked = true
+  void checkProxyHealth(port, log)
+}
+
+/**
+ * Test-only: close the owned listener (if any) and clear module state so the
+ * next acquireSharedProxy starts fresh.
+ */
+export async function resetSharedProxyForTests(): Promise<void> {
+  if (sharedStarting) {
+    try {
+      await sharedStarting
+    } catch {
+      // start failed; still clear
+    }
+  }
+  const close = shared?.ownedClose
+  shared = undefined
+  sharedStarting = undefined
+  sharedRefs = 0
+  await close?.()
 }
 
 // ---------------------------------------------------------------------------

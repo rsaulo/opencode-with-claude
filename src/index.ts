@@ -8,7 +8,12 @@ import {
   loadMeridianConfig,
   summarizeMeridianConfig,
 } from "./meridian-config"
-import { checkProxyHealth, getProxyBaseURL, startProxy } from "./proxy"
+import {
+  acquireSharedProxy,
+  checkSharedProxyHealth,
+  getProxyBaseURL,
+  releaseSharedProxy,
+} from "./proxy"
 
 export default Plugin.define({
   id: "opencode-with-claude",
@@ -21,7 +26,7 @@ export default Plugin.define({
     if (summary) void log("info", summary)
 
     const port = process.env.CLAUDE_PROXY_PORT || 3456
-    const proxy = await startProxy({
+    const proxy = await acquireSharedProxy({
       port,
       log,
       profiles: meridianConfig.profiles,
@@ -31,8 +36,8 @@ export default Plugin.define({
     const baseURL = getProxyBaseURL(proxy.port)
     void log("info", `proxy ready at ${baseURL}`)
 
-    // This is diagnostic only and can take seconds with a cold auth cache.
-    void checkProxyHealth(proxy.port, log)
+    // Diagnostic only. One shot for the process — not per location.
+    checkSharedProxyHealth(proxy.port, log)
 
     await ctx.agent.transform((agents) => {
       for (const agent of agents.list()) {
@@ -80,6 +85,8 @@ export default Plugin.define({
       event.request.headers.set("x-opencode-agent-name", agentName)
     })
 
-    return () => proxy.close()
+    // Drop this location's claim only. The listener stays up while any
+    // other location still holds it.
+    return () => releaseSharedProxy()
   },
 })
