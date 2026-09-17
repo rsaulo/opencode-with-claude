@@ -15,6 +15,10 @@ process.env.MERIDIAN_PASSTHROUGH ??= "true"
 // CLAUDE_CODE_SESSION_KIND=bg (to hide the scratchpad prompt section). Claude
 // Code then registers each request as a background job in ~/.claude/jobs that
 // is never closed, so interactive sessions show thousands of phantom agents.
+// Verified on CLI 2.1.274: one `claude -p` with the tag writes a job record,
+// the same run without it writes none, and CLAUDE_JOB_DIR cannot move the
+// record out of ~/.claude/jobs — only its basename is honoured.
+// The scratchpad advertisement is counter-instructed in index.ts instead.
 process.env.MERIDIAN_SUPPRESS_SCRATCHPAD ??= "0"
 
 // ---------------------------------------------------------------------------

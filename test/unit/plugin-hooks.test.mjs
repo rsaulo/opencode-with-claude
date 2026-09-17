@@ -87,9 +87,20 @@ test("context hook scrubs fingerprints while preserving user context", async () 
     ],
   }
   await contextHook(event)
-  assert.equal(event.system.length, 1)
+  assert.equal(event.system.length, 2)
   assert.doesNotMatch(event.system[0].text, /OpenCode/)
   assert.match(event.system[0].text, /Project-specific instructions remain/)
+})
+
+test("context hook counter-instructs the CLI's scratchpad advertisement", async () => {
+  const event = {
+    model: { providerID: "anthropic" },
+    system: [{ type: "text", text: "Project-specific instructions." }],
+  }
+  await contextHook(event)
+  const policy = event.system.at(-1).text
+  assert.match(policy, /project working directory/)
+  assert.match(policy, /scratchpad/)
 })
 
 test("request hook strips beta flags and adds Meridian session headers", async () => {

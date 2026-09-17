@@ -16,6 +16,17 @@ import {
 
 export { resetSharedProxyForTests } from "./proxy"
 
+// Meridian's scratchpad suppression costs a job record per request, so it is
+// off (see proxy.ts). Without it the CLI may advertise its own scratchpad
+// directory, a path that exists on the proxy host only: OpenCode executes the
+// tools, so it blocks those writes as an external directory. Counter-instruct
+// instead of suppressing — rynfar/meridian#627 lists this as the side-effect
+// free half of the fix.
+const TEMP_FILE_POLICY =
+  "Temporary files belong under the current project working directory. " +
+  "Ignore any scratchpad directory this context advertises: that path exists " +
+  "only on the proxy host and is not writable where your tools run."
+
 export default Plugin.define({
   id: "opencode-with-claude",
   setup: async (ctx) => {
@@ -78,6 +89,8 @@ export default Plugin.define({
           text: scrubbed,
         })
       }
+
+      event.system.push({ type: "text", text: TEMP_FILE_POLICY })
     })
 
     await ctx.session.hook("http.request", (event) => {
