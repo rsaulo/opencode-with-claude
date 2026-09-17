@@ -11,6 +11,12 @@ import { startProxyServer } from "@rynfar/meridian"
 // calls are filtered from the response stream and never shown in the TUI.
 process.env.MERIDIAN_PASSTHROUGH ??= "true"
 
+// In passthrough mode Meridian tags every SDK subprocess with
+// CLAUDE_CODE_SESSION_KIND=bg (to hide the scratchpad prompt section). Claude
+// Code then registers each request as a background job in ~/.claude/jobs that
+// is never closed, so interactive sessions show thousands of phantom agents.
+process.env.MERIDIAN_SUPPRESS_SCRATCHPAD ??= "0"
+
 // ---------------------------------------------------------------------------
 // Proxy lifecycle
 // ---------------------------------------------------------------------------
@@ -228,8 +234,9 @@ export async function startProxy(opts: StartProxyOptions): Promise<ProxyHandle> 
 }
 
 // ---------------------------------------------------------------------------
-// Process-wide singleton — one Meridian, one port, every location shares it.
+// Process-wide singleton — one Meridian, one port, tied to the serve process.
 // Location plugin unload must NOT close this. Isolation is x-opencode-session.
+// Tests tear it down with resetSharedProxyForTests().
 // ---------------------------------------------------------------------------
 
 type SharedProxy = {
@@ -240,7 +247,6 @@ type SharedProxy = {
 
 let shared: SharedProxy | undefined
 let sharedStarting: Promise<ProxyHandle> | undefined
-let sharedRefs = 0
 
 function immortalize(
   started: ProxyHandle,
@@ -249,8 +255,7 @@ function immortalize(
   const handle: ProxyHandle = {
     port: started.port,
     close: async () => {
-      // Shared lifetime: a location unloading must not kill Claude for others.
-      // Call releaseSharedProxy() instead — it closes only at refcount 0.
+      // Process lifetime: a location unloading must not kill Claude.
     },
   }
   shared = {
@@ -298,7 +303,6 @@ export async function acquireSharedProxy(
   opts: StartProxyOptions,
 ): Promise<ProxyHandle> {
   if (shared) {
-    sharedRefs += 1
     void opts.log?.(
       "info",
       `reusing Claude Max proxy on port ${shared.handle.port}`,
@@ -308,27 +312,17 @@ export async function acquireSharedProxy(
   if (!sharedStarting) sharedStarting = startShared(opts)
 
   try {
-    const handle = await sharedStarting
-    sharedRefs += 1
-    return handle
+    return await sharedStarting
   } finally {
-    if (shared) sharedStarting = undefined
+    sharedStarting = undefined
   }
 }
 
 /**
- * Drop one location's claim on the shared proxy. The listener closes only
- * when the last claimant is gone (tests, or the last project leaving).
+ * No-op. The listener lives with the serve process; location unload must
+ * not close it. Tests use resetSharedProxyForTests().
  */
-export async function releaseSharedProxy(): Promise<void> {
-  if (sharedRefs <= 0) return
-  sharedRefs -= 1
-  if (sharedRefs > 0) return
-  const close = shared?.ownedClose
-  shared = undefined
-  sharedStarting = undefined
-  await close?.()
-}
+export async function releaseSharedProxy(): Promise<void> {}
 
 /** Run /health once for the shared proxy. Later locations skip it. */
 export function checkSharedProxyHealth(
@@ -355,7 +349,6 @@ export async function resetSharedProxyForTests(): Promise<void> {
   const close = shared?.ownedClose
   shared = undefined
   sharedStarting = undefined
-  sharedRefs = 0
   await close?.()
 }
 

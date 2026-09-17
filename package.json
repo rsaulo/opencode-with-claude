@@ -8,11 +8,11 @@
   "exports": "./dist/index.js",
   "dependencies": {
     "@opencode-ai/plugin": "0.0.0-next-17403",
-    "@rynfar/meridian": "^1.60.0",
+    "@rynfar/meridian": "^1.66.0",
     "@rynfar/meridian-plugin-opencode-scrub": "^0.2.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.4.1",
     "tsup": "^8.5.1",
     "typescript": "^7.0.2"
   },

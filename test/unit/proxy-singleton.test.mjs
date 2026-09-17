@@ -74,22 +74,18 @@ test("handle.close does not kill the shared listener", async () => {
   })
 })
 
-test("releaseSharedProxy closes only after the last acquire", async () => {
+test("releaseSharedProxy does not close the process-lifetime listener", async () => {
   await withFakeHome(async () => {
     const first = await acquireSharedProxy({ port: 0, log: undefined })
-    const second = await acquireSharedProxy({ port: 0, log: undefined })
+    await acquireSharedProxy({ port: 0, log: undefined })
+    await releaseSharedProxy()
     await releaseSharedProxy()
     const stillUp = await fetch(`${getProxyBaseURL(first.port)}/health`, {
       signal: AbortSignal.timeout(10_000),
     })
     assert.equal(stillUp.status, 200)
-    await releaseSharedProxy()
-    await assert.rejects(
-      () =>
-        fetch(`${getProxyBaseURL(second.port)}/health`, {
-          signal: AbortSignal.timeout(2_000),
-        }),
-    )
+    const again = await acquireSharedProxy({ port: 0, log: undefined })
+    assert.equal(again.port, first.port)
   })
 })
 

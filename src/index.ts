@@ -12,8 +12,9 @@ import {
   acquireSharedProxy,
   checkSharedProxyHealth,
   getProxyBaseURL,
-  releaseSharedProxy,
 } from "./proxy"
+
+export { resetSharedProxyForTests } from "./proxy"
 
 export default Plugin.define({
   id: "opencode-with-claude",
@@ -46,8 +47,22 @@ export default Plugin.define({
       }
     })
 
-    await ctx.catalog.transform((catalog) => {
-      catalog.provider.update("anthropic", (provider) => {
+    // OpenCode 2.0.3+ replaced `ctx.catalog` with `ctx.provider`. The bundled
+    // `@opencode-ai/plugin` types still describe the preview catalog API.
+    const runtime = ctx as typeof ctx & {
+      provider: {
+        transform: (
+          callback: (editor: {
+            update: (
+              id: string,
+              update: (provider: { settings?: { baseURL?: string } }) => void,
+            ) => void
+          }) => void,
+        ) => Promise<unknown>
+      }
+    }
+    await runtime.provider.transform((editor) => {
+      editor.update("anthropic", (provider) => {
         ;(provider.settings ??= {}).baseURL = baseURL
       })
     })
@@ -85,8 +100,9 @@ export default Plugin.define({
       event.request.headers.set("x-opencode-agent-name", agentName)
     })
 
-    // Drop this location's claim only. The listener stays up while any
-    // other location still holds it.
-    return () => releaseSharedProxy()
+    // No cleanup. Meridian is process-lifetime: it starts with the first
+    // location that loads this plugin and dies with the OpenCode serve
+    // process. Returning releaseSharedProxy here used to kill Claude for
+    // every remaining window whenever V2 evicted the last idle location.
   },
 })

@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-let cleanup
+let resetSharedProxyForTests
 let contextHook
 let requestHook
 let provider
@@ -23,9 +23,11 @@ before(async () => {
   process.env.USERPROFILE = fakeHomeDir
   process.env.CLAUDE_PROXY_PORT = "0"
 
-  const { default: plugin } = await import(
+  const pluginModule = await import(
     `../../dist/index.js?t=${Date.now()}${Math.random()}`
   )
+  const plugin = pluginModule.default
+  resetSharedProxyForTests = pluginModule.resetSharedProxyForTests
   provider = { settings: { baseURL: "https://api.anthropic.com" } }
   const ctx = {
     agent: {
@@ -38,13 +40,11 @@ before(async () => {
         })
       },
     },
-    catalog: {
+    provider: {
       transform: async (callback) => {
         callback({
-          provider: {
-            update: (id, update) => {
-              if (id === "anthropic") update(provider)
-            },
+          update: (id, update) => {
+            if (id === "anthropic") update(provider)
           },
         })
       },
@@ -56,11 +56,11 @@ before(async () => {
       },
     },
   }
-  cleanup = await plugin.setup(ctx)
+  await plugin.setup(ctx)
 })
 
 after(async () => {
-  await cleanup()
+  await resetSharedProxyForTests?.()
   for (const [key, value] of Object.entries(previousEnv)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
@@ -72,10 +72,9 @@ test("exports a V2 plugin definition", async () => {
   const { default: plugin } = await import("../../dist/index.js")
   assert.equal(plugin.id, "opencode-with-claude")
   assert.equal(typeof plugin.setup, "function")
-  assert.equal(typeof cleanup, "function")
 })
 
-test("catalog transform points Anthropic at the owned proxy", () => {
+test("provider transform points Anthropic at the owned proxy", () => {
   assert.match(provider.settings.baseURL, /^http:\/\/.+:\d+$/)
 })
 
