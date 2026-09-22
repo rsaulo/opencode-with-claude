@@ -27,10 +27,22 @@ const TEMP_FILE_POLICY =
   "Ignore any scratchpad directory this context advertises: that path exists " +
   "only on the proxy host and is not writable where your tools run."
 
+// Meridian reads the client cwd from `<env> ... Working directory: X` in the
+// system prompt (extractClientCwd). The scrub below deletes OpenCode's <env>
+// block, so Meridian fell back to its own process.cwd() and the SDK told
+// Claude it was working wherever the serve process started. Re-emit the
+// directory after scrubbing, in the shape extractClientCwd expects.
+const WORKING_DIRECTORY = /<env>\s*[\s\S]*?Working directory:\s*([^\n<]+)/i
+const envBlock = (directory: string) =>
+  `<env>\nWorking directory: ${directory}\n</env>`
+
 export default Plugin.define({
   id: "opencode-with-claude",
   setup: async (ctx) => {
     const log = createLogger()
+    // V2 runs setup() once per location. The bundled types predate `location`.
+    const locationDirectory = (ctx as { location?: { directory?: string } })
+      .location?.directory
     const agentModes = new Map<string, string>()
 
     const meridianConfig = loadMeridianConfig(log)
@@ -82,6 +94,8 @@ export default Plugin.define({
       if (event.model.providerID !== "anthropic") return
 
       const systemContext = event.system.map((part) => part.text).join("\n\n")
+      const directory =
+        systemContext.match(WORKING_DIRECTORY)?.[1]?.trim() || locationDirectory
       const scrubbed = scrubOpencodeFingerprints(systemContext)
       if (scrubbed !== systemContext) {
         event.system.splice(0, event.system.length, {
@@ -90,7 +104,12 @@ export default Plugin.define({
         })
       }
 
-      event.system.push({ type: "text", text: TEMP_FILE_POLICY })
+      event.system.push({
+        type: "text",
+        text: directory
+          ? `${envBlock(directory)}\n\n${TEMP_FILE_POLICY}`
+          : TEMP_FILE_POLICY,
+      })
     })
 
     await ctx.session.hook("http.request", (event) => {

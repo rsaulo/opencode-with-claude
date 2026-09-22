@@ -30,6 +30,7 @@ before(async () => {
   resetSharedProxyForTests = pluginModule.resetSharedProxyForTests
   provider = { settings: { baseURL: "https://api.anthropic.com" } }
   const ctx = {
+    location: { directory: "/work/project" },
     agent: {
       transform: async (callback) => {
         callback({
@@ -101,6 +102,37 @@ test("context hook counter-instructs the CLI's scratchpad advertisement", async 
   const policy = event.system.at(-1).text
   assert.match(policy, /project working directory/)
   assert.match(policy, /scratchpad/)
+})
+
+test("context hook tells Meridian the location's working directory", async () => {
+  const event = {
+    model: { providerID: "anthropic" },
+    system: [{ type: "text", text: "Project-specific instructions." }],
+  }
+  await contextHook(event)
+  // Same pattern as Meridian's extractClientCwd.
+  const text = event.system.map((part) => part.text).join("\n")
+  const match = text.match(/<env>\s*[\s\S]*?Working directory:\s*([^\n<]+)/i)
+  assert.equal(match?.[1]?.trim(), "/work/project")
+})
+
+test("context hook keeps the directory OpenCode reported after scrubbing its <env>", async () => {
+  const event = {
+    model: { providerID: "anthropic" },
+    system: [
+      {
+        type: "text",
+        text:
+          "Instructions.\nHere is some useful information about the environment you are running in:\n" +
+          "<env>\n  Working directory: /from/opencode\n  Platform: darwin\n</env>\nMore.",
+      },
+    ],
+  }
+  await contextHook(event)
+  const text = event.system.map((part) => part.text).join("\n")
+  assert.equal(text.match(/Working directory:/g).length, 1)
+  const match = text.match(/<env>\s*[\s\S]*?Working directory:\s*([^\n<]+)/i)
+  assert.equal(match?.[1]?.trim(), "/from/opencode")
 })
 
 test("request hook strips beta flags and adds Meridian session headers", async () => {
