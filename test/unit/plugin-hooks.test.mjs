@@ -153,6 +153,19 @@ test("request hook strips beta flags and adds Meridian session headers", async (
   assert.equal(event.request.headers.get("keep"), "me")
 })
 
+test("request hook keeps utility agents out of the conversation's session", async () => {
+  for (const agent of ["title", "summary", "compaction"]) {
+    const event = {
+      sessionID: "sess-123",
+      agent,
+      model: { providerID: "anthropic" },
+      request: new Request("http://localhost/messages"),
+    }
+    await requestHook(event)
+    assert.equal(event.request.headers.get("x-opencode-session"), `sess-123:${agent}`)
+  }
+})
+
 test("hooks ignore non-Anthropic requests", async () => {
   const system = [{ type: "text", text: "You are OpenCode" }]
   await contextHook({ model: { providerID: "openai" }, system })

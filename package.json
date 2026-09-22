@@ -11,6 +11,9 @@
     "@rynfar/meridian": "^1.71.1",
     "@rynfar/meridian-plugin-opencode-scrub": "^0.2.0"
   },
+  "overrides": {
+    "@anthropic-ai/claude-code": "^2.1.278"
+  },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "tsup": "^8.5.1",

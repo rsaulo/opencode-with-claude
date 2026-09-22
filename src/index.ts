@@ -36,6 +36,13 @@ const WORKING_DIRECTORY = /<env>\s*[\s\S]*?Working directory:\s*([^\n<]+)/i
 const envBlock = (directory: string) =>
   `<env>\nWorking directory: ${directory}\n</env>`
 
+// OpenCode runs these as side requests under the conversation's session ID.
+// Meridian keys SDK sessions on x-opencode-session, so sharing it spliced the
+// generated title (with the small model's thinking) into Claude's history and
+// raced the first real turn ("This session advanced while the request was
+// waiting"). Give each its own Meridian session.
+const UTILITY_AGENTS = new Set(["title", "summary", "compaction"])
+
 export default Plugin.define({
   id: "opencode-with-claude",
   setup: async (ctx) => {
@@ -120,7 +127,11 @@ export default Plugin.define({
         String(event.agent ?? "unknown").replace(/[^\x20-\x7E]/g, "").trim() ||
         "unknown"
 
-      event.request.headers.set("x-opencode-session", event.sessionID)
+      const utility = UTILITY_AGENTS.has(agentName.toLowerCase())
+      event.request.headers.set(
+        "x-opencode-session",
+        utility ? `${event.sessionID}:${agentName.toLowerCase()}` : event.sessionID,
+      )
       event.request.headers.set(
         "x-opencode-request",
         event.request.headers.get("x-opencode-request") ?? randomUUID(),
