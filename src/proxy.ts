@@ -21,6 +21,12 @@ process.env.MERIDIAN_PASSTHROUGH ??= "true"
 // The scratchpad advertisement is counter-instructed in index.ts instead.
 process.env.MERIDIAN_SUPPRESS_SCRATCHPAD ??= "0"
 
+// Meridian maps every "opus" model to the CLI's `opus` alias and resolves the
+// alias through this variable (canonical default: claude-opus-5), so the model
+// OpenCode asks for never reaches the SDK. Pin the alias to Opus 5.5; any
+// Opus picked in OpenCode runs as this one.
+process.env.MERIDIAN_DEFAULT_OPUS_MODEL ??= "claude-opus-5-5"
+
 // ---------------------------------------------------------------------------
 // Proxy lifecycle
 // ---------------------------------------------------------------------------
